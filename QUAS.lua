@@ -1,18 +1,16 @@
--- QUAS.lua
--- Roblox Studio version
-
 local Players = game:GetService("Players")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-
 local player = Players.LocalPlayer
-local KEY = "mazentaman"
+local PlayerGui = player:WaitForChild("PlayerGui")
 
-local remote = ReplicatedStorage:WaitForChild("QUAS_Action")
+local old = PlayerGui:FindFirstChild("QUAS")
+if old then
+    old:Destroy()
+end
 
 local gui = Instance.new("ScreenGui")
 gui.Name = "QUAS"
 gui.ResetOnSpawn = false
-gui.Parent = player:WaitForChild("PlayerGui")
+gui.Parent = PlayerGui
 
 local main = Instance.new("Frame")
 main.Size = UDim2.fromOffset(420, 500)
@@ -72,86 +70,136 @@ status.TextSize = 14
 status.TextColor3 = Color3.fromRGB(180, 180, 180)
 status.Parent = main
 
-local function makeButton(text, x, y, callback)
-	local button = Instance.new("TextButton")
-	button.Size = UDim2.fromOffset(175, 42)
-	button.Position = UDim2.fromOffset(x, y)
-	button.Text = text
-	button.Font = Enum.Font.GothamBold
-	button.TextSize = 14
-	button.TextColor3 = Color3.new(1, 1, 1)
-	button.BackgroundColor3 = Color3.fromRGB(24, 43, 78)
-	button.Parent = main
-
-	local c = Instance.new("UICorner")
-	c.CornerRadius = UDim.new(0, 8)
-	c.Parent = button
-
-	button.Activated:Connect(callback)
-
-	return button
-end
-
 local authenticated = false
+local KEY = "mazentaman"
 
 unlock.Activated:Connect(function()
-	remote:FireServer("Authenticate", {
-		key = keyBox.Text
-	})
+    if keyBox.Text == KEY then
+        authenticated = true
+        status.Text = "UNLOCKED"
+        status.TextColor3 = Color3.fromRGB(100, 255, 150)
+    else
+        authenticated = false
+        status.Text = "INVALID KEY"
+        status.TextColor3 = Color3.fromRGB(255, 100, 100)
+    end
 end)
 
-remote.OnClientEvent:Connect(function(message, value)
-	if message == "AuthResult" then
-		authenticated = value == true
+local function makeButton(text, x, y, callback)
+    local button = Instance.new("TextButton")
+    button.Size = UDim2.fromOffset(175, 42)
+    button.Position = UDim2.fromOffset(x, y)
+    button.Text = text
+    button.Font = Enum.Font.GothamBold
+    button.TextSize = 14
+    button.TextColor3 = Color3.new(1, 1, 1)
+    button.BackgroundColor3 = Color3.fromRGB(24, 43, 78)
+    button.Parent = main
 
-		if authenticated then
-			status.Text = "UNLOCKED"
-			status.TextColor3 = Color3.fromRGB(100, 255, 150)
-		else
-			status.Text = "INVALID KEY"
-			status.TextColor3 = Color3.fromRGB(255, 100, 100)
-		end
-	end
+    local c = Instance.new("UICorner")
+    c.CornerRadius = UDim.new(0, 8)
+    c.Parent = button
+
+    button.Activated:Connect(function()
+        if authenticated then
+            callback()
+        end
+    end)
+
+    return button
+end
+
+local antiSit = false
+
+local function setupCharacter(character)
+    local humanoid = character:WaitForChild("Humanoid", 5)
+    if not humanoid then
+        return
+    end
+
+    humanoid.StateChanged:Connect(function(_, newState)
+        if antiSit and newState == Enum.HumanoidStateType.Seated then
+            humanoid:ChangeState(Enum.HumanoidStateType.GettingUp)
+        end
+    end)
+end
+
+if player.Character then
+    setupCharacter(player.Character)
+end
+
+player.CharacterAdded:Connect(setupCharacter)
+
+makeButton("ANTI-SIT ON", 20, 210, function()
+    antiSit = true
 end)
 
-makeButton("FLING EVERYONE", 20, 210, function()
-	if not authenticated then return end
-
-	remote:FireServer("Fling", {
-		mode = "Everyone"
-	})
+makeButton("ANTI-SIT OFF", 215, 210, function()
+    antiSit = false
 end)
 
-makeButton("FLING NON-FRIENDS", 215, 210, function()
-	if not authenticated then return end
+makeButton("RESET CHARACTER", 20, 265, function()
+    local character = player.Character
+    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
 
-	remote:FireServer("Fling", {
-		mode = "NonFriends"
-	})
+    if humanoid then
+        humanoid.Health = 0
+    end
 end)
 
-makeButton("ANTI-SIT ON", 20, 265, function()
-	if not authenticated then return end
-
-	remote:FireServer("AntiSit", {
-		enabled = true
-	})
+makeButton("HIDE", 215, 265, function()
+    main.Visible = false
 end)
 
-makeButton("ANTI-SIT OFF", 215, 265, function()
-	if not authenticated then return end
-
-	remote:FireServer("AntiSit", {
-		enabled = false
-	})
+makeButton("SHOW", 20, 320, function()
+    main.Visible = true
 end)
 
-makeButton("RESET", 20, 320, function()
-	if not authenticated then return end
-
-	remote:FireServer("Reset")
+makeButton("RELOAD GUI", 215, 320, function()
+    main.Visible = false
+    task.wait()
+    main.Visible = true
 end)
 
-makeButton("HIDE", 215, 320, function()
-	main.Visible = false
+local UserInputService = game:GetService("UserInputService")
+
+local dragging = false
+local dragStart
+local startPos
+
+title.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1
+        or input.UserInputType == Enum.UserInputType.Touch then
+
+        dragging = true
+        dragStart = input.Position
+        startPos = main.Position
+
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then
+                dragging = false
+            end
+        end)
+    end
 end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if not dragging then
+        return
+    end
+
+    if input.UserInputType == Enum.UserInputType.MouseMovement
+        or input.UserInputType == Enum.UserInputType.Touch then
+
+        local delta = input.Position - dragStart
+
+        main.Position = UDim2.new(
+            startPos.X.Scale,
+            startPos.X.Offset + delta.X,
+            startPos.Y.Scale,
+            startPos.Y.Offset + delta.Y
+        )
+    end
+end)
+
+print("[QUAS] Loaded successfully")
